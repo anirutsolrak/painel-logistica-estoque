@@ -18,7 +18,6 @@ import { FilterContext } from '../contexto/FilterContext';
 
 const formatDate = (dateString) => { if (!dateString) return ''; try { const date = new Date(dateString); if (isNaN(date.getTime())) return dateString; return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch (e) { return dateString; } };
 const formatDateTime = (timestamp) => { if (!timestamp) return 'N/A'; try { const date = new Date(timestamp); return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return 'Data inválida'; } };
-// Updated formatNumber to remove K/M abbreviations
 const formatNumber = (value, decimals = 0, isCurrency = false) => {
     if (value === null || value === undefined) {
         return decimals === 0 ? 'N/D' : (isCurrency ? 'R$ --,--' : 'N/D');
@@ -32,7 +31,6 @@ const formatNumber = (value, decimals = 0, isCurrency = false) => {
         maximumFractionDigits: decimals,
     };
     if (isCurrency) {
-        // Specific currency formatting (e.g., abbreviate large values)
         let fV;
         const aN = Math.abs(num);
         if (aN >= 1e6) { fV = (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; }
@@ -40,7 +38,6 @@ const formatNumber = (value, decimals = 0, isCurrency = false) => {
         else { fV = num.toLocaleString('pt-BR', options); }
         return `R$ ${fV}`;
     }
-    // Default number formatting (no abbreviation)
     return num.toLocaleString('pt-BR', options);
 };
 const formatPercent = (value, decimals = 1) => { if (value === null || value === undefined || isNaN(Number(value))) return '-'; const num = Number(value); return num.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
@@ -212,7 +209,48 @@ export default function EstoqueView({ user, onNavigate }) {
     const stockChartOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { ticks: { font: { size: 10 }, padding: 5, maxRotation: (isMobileView || isStockChartExpanded) ? 60 : 0, autoSkip: !isStockChartExpanded } }, ySaldo: { type: 'linear', position: 'left', beginAtZero: false, title: { display: true, text: 'Saldo', font: { size: 11 } }, ticks: { font: { size: 10 }, callback: function(value) { return formatNumber(value); } }, grid: { drawOnChartArea: true } }, yMov: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'Movimentação (Dia)', font: { size: 11 } }, ticks: { font: { size: 10 }, callback: function(value) { return formatNumber(value); } }, grid: { drawOnChartArea: false } } }, plugins: { legend: { position: 'bottom', labels: { font: {size: 11}, usePointStyle: true, pointStyleWidth: 8 } }, tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed.y !== null) { label += formatNumber(context.parsed.y); } return label; } } } } }), [formatNumber, isMobileView, isStockChartExpanded]);
     const stockChartMinWidth = isStockChartExpanded ? `${Math.max(600, (stockChartData?.labels?.length || 0) * (isMobileView ? 35 : 50))}px` : '100%';
 
-    const resendDataGroupedByRegion = useMemo(() => { const grouped = {}; let totalResendsOverall = 0; let totalEntriesWithResends = 0; for (const uf in resendUfData) { const region = ufToRegionMap[uf] || 'INDEFINIDA'; const ufData = resendUfData[uf]; if (!grouped[region]) { grouped[region] = { totalCount: 0, totalResends: 0, states: {} }; } grouped[region].totalCount += ufData.total_count; grouped[region].totalResends += ufData.total_resends; grouped[region].states[uf] = ufData; totalResendsOverall += ufData.total_resends; totalEntriesWithResends += ufData.total_count; } for (const region in grouped) { grouped[region].averageResends = grouped[region].totalCount > 0 ? grouped[region].totalResends / grouped[region].totalCount : 0; grouped[region].states = Object.entries(grouped[region].states).sort(([, a], [, b]) => b.total_count - a.total_count).reduce((obj, [key, value]) => { obj[key] = value; return obj; }, {}); } const overallAverageResends = totalEntriesWithResends > 0 ? totalResendsOverall / totalEntriesWithResends : 0; return { grouped, overallAverageResends, totalEntriesWithResends }; }, [resendUfData]);
+    const resendDataGroupedByRegion = useMemo(() => {
+        const grouped = {};
+        let totalResendsOverall = 0;
+        let totalEntriesWithResendsOverall = 0; // Total de *ENTRADAS COM REENVIO*
+
+        for (const uf in resendUfData) {
+            const region = ufToRegionMap[uf] || 'INDEFINIDA';
+            const ufData = resendUfData[uf];
+
+            if (!grouped[region]) {
+                grouped[region] = { totalCount: 0, totalResends: 0, entriesWithResends: 0, states: {} };
+            }
+
+            // Acumula totais
+            grouped[region].totalCount += ufData.total_count || 0;
+            grouped[region].totalResends += ufData.total_resends || 0;
+            grouped[region].entriesWithResends += ufData.entries_with_resends || 0; // Acumula a contagem de entradas com reenvio
+            grouped[region].states[uf] = ufData; // Armazena os dados da UF (incluindo a média já calculada no backend)
+
+            totalResendsOverall += ufData.total_resends || 0;
+            totalEntriesWithResendsOverall += ufData.entries_with_resends || 0; // Acumula total geral *com reenvio*
+        }
+
+        for (const region in grouped) {
+            // Calcula a média regional dividindo reenvios totais pelas *entradas que tiveram reenvio*
+            grouped[region].averageResends = grouped[region].entriesWithResends > 0
+                ? grouped[region].totalResends / grouped[region].entriesWithResends
+                : 0;
+            grouped[region].states = Object.entries(grouped[region].states).sort(([, a], [, b]) => b.total_count - a.total_count).reduce((obj, [key, value]) => { obj[key] = value; return obj; }, {});
+        }
+
+        // Calcula a média geral da mesma forma
+        const overallAverageResends = totalEntriesWithResendsOverall > 0 ? totalResendsOverall / totalEntriesWithResendsOverall : 0;
+
+        // Retorna totalEntriesOverall para o título (total de entradas no período)
+        const totalEntriesOverall = Object.values(grouped).reduce((sum, region) => sum + region.totalCount, 0);
+
+        return { grouped, overallAverageResends, totalEntriesOverall };
+    }, [resendUfData]);
+
+    const totalEntriesPeriod = resendDataGroupedByRegion.totalEntriesOverall; // Usar o total geral de entradas
+
     const resendGroupDataWithCost = useMemo(() => { if (!resendGroupData || resendGroupData.length === 0 || !ufAverageCosts || Object.keys(ufAverageCosts).length === 0) { return (resendGroupData || []).map(g => ({ ...g, totalCost: 0 })); } const allCosts = Object.values(ufAverageCosts).filter(c => c !== null && !isNaN(c)); const averageCostOverall = allCosts.length > 0 ? allCosts.reduce((sum, cost) => sum + cost, 0) / allCosts.length : 0; return resendGroupData.map(group => ({ ...group, totalCost: (group.count ?? 0) * averageCostOverall })); }, [resendGroupData, ufAverageCosts]);
 
     const canUpload = user && user.role !== 'guest';
@@ -325,21 +363,21 @@ export default function EstoqueView({ user, onNavigate }) {
 
                          {!error && hasResendData && (
                              <div className="mt-8">
-                                 <h3 className="text-xl font-semibold text-gray-800 mb-4">Detalhes de Reenvios (Total Período: {formatNumber(resendDataGroupedByRegion.totalEntriesWithResends ?? 0)}, Média Geral: {formatNumber(resendDataGroupedByRegion.overallAverageResends, 1)})</h3>
+                                 <h3 className="text-xl font-semibold text-gray-800 mb-4">Detalhes de Reenvios (Total Período: {formatNumber(totalEntriesPeriod ?? 0)}, Média Geral: {formatNumber(resendDataGroupedByRegion.overallAverageResends, 1)})</h3>
                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                      <div className="md:col-span-2 bg-white p-4 rounded-lg shadow-md border border-gray-200">
                                          <h4 className="text-base font-semibold text-gray-700 mb-3">Contagem por Região/UF</h4>
                                          <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-                                             {Object.entries(resendDataGroupedByRegion.grouped).sort(([, a], [, b]) => b.totalCount - a.totalCount).map(([region, regionData]) => ( <div key={region} className="bg-gray-50 p-3 rounded-md border border-gray-200"> <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleResendRegionExpansion(region)}> <span className="font-medium text-sm text-gray-800">{region}</span> <div className='flex items-center text-sm'> <span className="text-xs text-gray-500 mr-2" title="Média de Reenvios na Região">Média Reenv.: {formatNumber(regionData.averageResends, 1)}</span> <span className="font-bold mr-2">{formatNumber(regionData.totalCount)}</span> <i className={`fas fa-chevron-down text-gray-500 transition-transform duration-200 ${expandedResendRegion === region ? 'rotate-180' : ''}`}></i> </div> </div> <div className={`transition-all duration-300 ease-in-out overflow-hidden ${expandedResendRegion === region ? 'max-h-60 mt-2 pt-2 border-t border-gray-200' : 'max-h-0'}`} style={{ maxHeight: expandedResendRegion === region ? '15rem' : '0' }}> <div className="space-y-1 pl-2">
+                                             {Object.entries(resendDataGroupedByRegion.grouped).sort(([, a], [, b]) => b.totalCount - a.totalCount).map(([region, regionData]) => ( <div key={region} className="bg-gray-50 p-3 rounded-md border border-gray-200"> <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleResendRegionExpansion(region)}> <span className="font-medium text-sm text-gray-800">{region}</span> <div className='flex items-center text-sm'> <span className="text-xs text-gray-500 mr-2" title="Média de Reenvios na Região (somente itens > 0 reenvios)">Média Reenv.: {formatNumber(regionData.averageResends, 1)}</span> <span className="font-bold mr-2">{formatNumber(regionData.totalCount)}</span> <i className={`fas fa-chevron-down text-gray-500 transition-transform duration-200 ${expandedResendRegion === region ? 'rotate-180' : ''}`}></i> </div> </div> <div className={`transition-all duration-300 ease-in-out overflow-hidden ${expandedResendRegion === region ? 'max-h-60 mt-2 pt-2 border-t border-gray-200' : 'max-h-0'}`} style={{ maxHeight: expandedResendRegion === region ? '15rem' : '0' }}> <div className="space-y-1 pl-2">
                                              <div className="flex justify-between items-center text-xs font-medium text-gray-500 border-b mb-1 pb-0.5">
                                                  <span>Estado</span>
                                                  <span className='flex items-center space-x-2'>
                                                      <span className="w-12 text-right" title="Custo Médio da UF">C.Médio</span>
-                                                     <span className="w-10 text-right" title="Média de Reenvios por Cartão">M.Reenv.</span>
-                                                     <span className="w-8 text-right" title="Total de Cartões Reenviados">Total</span>
+                                                     <span className="w-10 text-right" title="Média de Reenvios por Cartão (somente > 0 reenvios)">M.Reenv.</span>
+                                                     <span className="w-8 text-right" title="Total de Entradas">Total</span>
                                                  </span>
                                              </div>
-                                             {Object.entries(regionData.states).map(([state, stateData]) => ( <div key={state} className="flex justify-between items-center text-xs"> <span className="text-gray-600">{state}</span> <span className='flex items-center space-x-2'> <span className="text-gray-500 w-12 text-right" title={`Custo Médio da UF ${state}`}>{formatNumber(ufAverageCosts[state] ?? 0, 2, true)}</span> <span className="text-gray-500 w-10 text-right" title={`Média de Reenvios em ${state}`}>{formatNumber(stateData.average_resends, 1)}</span> <span className="font-medium text-gray-700 w-8 text-right">{formatNumber(stateData.total_count)}</span> </span> </div> ))} </div> </div> </div> ))}
+                                             {Object.entries(regionData.states).map(([state, stateData]) => ( <div key={state} className="flex justify-between items-center text-xs"> <span className="text-gray-600">{state}</span> <span className='flex items-center space-x-2'> <span className="text-gray-500 w-12 text-right" title={`Custo Médio da UF ${state}`}>{formatNumber(ufAverageCosts[state] ?? 0, 2, true)}</span> <span className="text-gray-500 w-10 text-right" title={`Média de Reenvios em ${state} (somente > 0 reenvios)`}>{formatNumber(stateData.average_resends_if_any, 1)}</span> <span className="font-medium text-gray-700 w-8 text-right">{formatNumber(stateData.total_count)}</span> </span> </div> ))} </div> </div> </div> ))}
                                              {Object.keys(resendDataGroupedByRegion.grouped).length === 0 && <p className="text-sm text-gray-500 italic text-center py-4">Nenhum reenvio registrado.</p>}
                                          </div>
                                      </div>
