@@ -28,11 +28,11 @@ const renderSimpleComparison = (currentValue, previousValue) => { const change =
 
 const ufToRegionMap = { 'AC': 'NORTE', 'AP': 'NORTE', 'AM': 'NORTE', 'PA': 'NORTE', 'RO': 'NORTE', 'RR': 'NORTE', 'TO': 'NORTE', 'AL': 'NORDESTE', 'BA': 'NORDESTE', 'CE': 'NORDESTE', 'MA': 'NORDESTE', 'PB': 'NORDESTE', 'PE': 'NORDESTE', 'PI': 'NORDESTE', 'RN': 'NORDESTE', 'SE': 'NORDESTE', 'DF': 'CENTRO OESTE', 'GO': 'CENTRO OESTE', 'MT': 'CENTRO OESTE', 'MS': 'CENTRO OESTE', 'ES': 'SUDESTE', 'MG': 'SUDESTE', 'RJ': 'SUDESTE', 'SP': 'SUDESTE', 'PR': 'SUL', 'RS': 'SUL', 'SC': 'SUL' };
 
-const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes cache expiry
+const CACHE_EXPIRY_MS = 5 * 60 * 1000;
 
 export default function EstoqueView({ user, onNavigate }) {
     const reportError = (error, context = 'EstoqueView') => console.error(`[${context}] Error:`, error?.message || error);
-    const { period, cachedData, updateCache } = useContext(FilterContext); // Use cache functions
+    const { period, cachedData, updateCache } = useContext(FilterContext);
     const estoqueService = useMemo(() => EstoqueService(), []);
 
     const [isLoading, setIsLoading] = useState(true);
@@ -70,7 +70,7 @@ export default function EstoqueView({ user, onNavigate }) {
             setUfAverageCosts(cached.ufAverageCosts);
             setError(null);
             setIsLoading(false);
-            return; // Skip fetching
+            return;
         } else if (viewCache) {
             console.log(`[EstoqueView Fetch] Cache STALE for period ${periodKey}`);
         } else {
@@ -142,12 +142,11 @@ export default function EstoqueView({ user, onNavigate }) {
             setResendGroupData(fetchedData.resendGroupData);
             setUfAverageCosts(fetchedData.ufAverageCosts);
 
-            // Update cache on successful fetch
             updateCache('estoque', periodKey, fetchedData);
 
         } catch (err) { reportError(err, 'fetchLocalStockData'); setError(`Falha ao carregar dados: ${err.message}`); setCurrentKpiData(null); setPreviousPeriodEndSaldo(null); setTimeSeriesData([]); setLastStockUpdate(null); setResendUfData({}); setResendGroupData([]); setUfAverageCosts({}); }
         finally { setIsLoading(false); }
-    }, [estoqueService, cachedData, updateCache]); // Add cache dependencies
+    }, [estoqueService, cachedData, updateCache]);
 
     useEffect(() => { fetchLocalStockData(period.startDate, period.endDate); }, [period.startDate, period.endDate, fetchLocalStockData]);
     useEffect(() => { const handleResize = () => setIsMobileView(window.innerWidth < 768); window.addEventListener('resize', handleResize); handleResize(); return () => window.removeEventListener('resize', handleResize); }, []);
@@ -160,23 +159,30 @@ export default function EstoqueView({ user, onNavigate }) {
          if (previousPeriodEndSaldo === null || currentKpiData === null) return null;
          const saldoInicial = previousPeriodEndSaldo ?? 0;
          const entradas = currentKpiData.entradasTotal ?? 0;
-         const saidas = (currentKpiData.saidasTotal ?? 0) + (currentKpiData.destruido ?? 0);
-         return saldoInicial + entradas - saidas;
+         const saidasEfetivas = currentKpiData.saidasTotal ?? 0;
+         const fragmentados = currentKpiData.destruido ?? 0;
+         return saldoInicial + entradas - (saidasEfetivas + fragmentados);
      }, [previousPeriodEndSaldo, currentKpiData]);
 
     const displayedKPIs = useMemo(() => {
         if (!currentKpiData) return {};
-        return {
-             saldo: { title: "Saldo Final (Período)", value: currentPeriodEndingBalance, comparison: renderSimpleComparison(currentPeriodEndingBalance, previousPeriodEndSaldo) },
-             entradasTotal: { title: "Entradas (Total)", value: currentKpiData.entradasTotal },
-             saidasTotal: { title: "Saídas (Enviado)", value: currentKpiData.saidasTotal },
-             destruido: { title: "Destruído", value: currentKpiData.destruido },
-             recusadoCliente: { title: "Recusado Cliente", value: currentKpiData.recusadoCliente },
-             naoLocalizado: { title: "Não Localizado", value: currentKpiData.naoLocalizado },
-             preparadoEnvio: { title: "Preparado p/ Envio", value: currentKpiData.preparadoEnvio },
-             estoqueFlash: { title: "Em Estoque (Flash)", value: currentKpiData.estoqueFlash },
+        const kpis = {
+             saldo: { key: 'saldo', title: "Saldo Final (Período)", value: currentPeriodEndingBalance, comparison: renderSimpleComparison(currentPeriodEndingBalance, previousPeriodEndSaldo) },
+             entradasTotal: { key: 'entradasTotal', title: "Entradas (Total)", value: currentKpiData.entradasTotal },
+             saidasTotal: { key: 'saidasTotal', title: "Saídas (Enviado)", value: currentKpiData.saidasTotal },
+             estoqueFlash: { key: 'estoqueFlash', title: "Em Estoque (Flash)", value: currentKpiData.estoqueFlash },
+             preparadoEnvio: { key: 'preparadoEnvio', title: "Preparado p/ Envio", value: currentKpiData.preparadoEnvio },
+             recusadoCliente: { key: 'recusadoCliente', title: "Recusado Cliente", value: currentKpiData.recusadoCliente },
+             naoLocalizado: { key: 'naoLocalizado', title: "Não Localizado", value: currentKpiData.naoLocalizado },
+             fragmentado: { key: 'fragmentado', title: "Fragmentado", value: currentKpiData.destruido },
          };
+         return kpis;
      }, [currentKpiData, previousPeriodEndSaldo, currentPeriodEndingBalance]);
+
+     const kpiRenderOrder = [
+         'saldo', 'entradasTotal', 'saidasTotal', 'estoqueFlash',
+         'preparadoEnvio', 'recusadoCliente', 'naoLocalizado', 'fragmentado'
+     ];
 
     const stockChartData = useMemo(() => { if (!timeSeriesData || timeSeriesData.length === 0) return { labels: [], datasets: [] }; let dataToUse = timeSeriesData; if (!isMobileView && !isStockChartExpanded && timeSeriesData.length > 3) { dataToUse = timeSeriesData.slice(-3); } const labels = dataToUse.map(d => new Date(d.date + 'T00:00:00Z').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })); const saldoData = dataToUse.map(d => d.saldo); const saidasData = dataToUse.map(d => d.saidasTotal); const entradasData = dataToUse.map(d => (d.entradasFlash || 0) + (d.entradasInterlog || 0)); const entradasLabel = "Entradas (Total)"; const pointRadius = timeSeriesData.length > 30 ? (isStockChartExpanded ? 1 : 0) : 3; return { labels: labels, datasets: [ { label: 'Saldo', data: saldoData, yAxisID: 'ySaldo', type: 'line', borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.1, fill: false, pointRadius: pointRadius, pointHoverRadius: 5, spanGaps: true }, { label: entradasLabel, data: entradasData, yAxisID: 'yMov', type: 'bar', borderColor: '#10b981', backgroundColor: '#10b981A0', barPercentage: 0.6, categoryPercentage: 0.7 }, { label: 'Saídas (Total)', data: saidasData, yAxisID: 'yMov', type: 'bar', borderColor: '#ef4444', backgroundColor: '#ef4444A0', barPercentage: 0.6, categoryPercentage: 0.7 } ] }; }, [timeSeriesData, isStockChartExpanded, isMobileView]);
     const stockChartOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { ticks: { font: { size: 10 }, padding: 5, maxRotation: (isMobileView || isStockChartExpanded) ? 60 : 0, autoSkip: !isStockChartExpanded } }, ySaldo: { type: 'linear', position: 'left', beginAtZero: false, title: { display: true, text: 'Saldo', font: { size: 11 } }, ticks: { font: { size: 10 }, callback: function(value) { return formatNumber(value); } }, grid: { drawOnChartArea: true } }, yMov: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'Movimentação (Dia)', font: { size: 11 } }, ticks: { font: { size: 10 }, callback: function(value) { return formatNumber(value); } }, grid: { drawOnChartArea: false } } }, plugins: { legend: { position: 'bottom', labels: { font: {size: 11}, usePointStyle: true, pointStyleWidth: 8 } }, tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed.y !== null) { label += formatNumber(context.parsed.y); } return label; } } } } }), [formatNumber, isMobileView, isStockChartExpanded]);
@@ -230,7 +236,7 @@ export default function EstoqueView({ user, onNavigate }) {
     return (
         <div className="min-h-screen relative">
             {isLoading && (
-                 <div className="absolute inset-0 bg-white bg-opacity-75 flex items-top justify-center z-40 rounded-lg">
+                 <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-40 rounded-lg">
                     <div className="text-center">
                         <LoadingSpinner message="Conteúdo sendo carregado, por favor aguarde..." />
                     </div>
@@ -250,8 +256,7 @@ export default function EstoqueView({ user, onNavigate }) {
 
                 {isLoading ? (
                     <>
-                        {renderKPISkeletons(4)}
-                        {renderKPISkeletons(4)}
+                        {renderKPISkeletons(8)}
                         {renderChartSkeleton()}
                         {renderResendSkeletons()}
                     </>
@@ -259,20 +264,20 @@ export default function EstoqueView({ user, onNavigate }) {
                     <>
                         {!error && !currentKpiData && <div className="text-center text-gray-500 py-10">Nenhum dado de estoque encontrado.</div>}
                         {!error && currentKpiData && Object.keys(displayedKPIs).length > 0 && (
-                            <>
-                                 <div className="kpi-grid grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                                    <KPIPanel title={displayedKPIs.saldo?.title} value={formatNumber(displayedKPIs.saldo?.value)} comparison={displayedKPIs.saldo?.comparison} />
-                                    <KPIPanel title={displayedKPIs.entradasTotal?.title} value={formatNumber(displayedKPIs.entradasTotal?.value)} />
-                                    <KPIPanel title={displayedKPIs.saidasTotal?.title} value={formatNumber(displayedKPIs.saidasTotal?.value)} />
-                                    <KPIPanel title={displayedKPIs.estoqueFlash?.title} value={formatNumber(displayedKPIs.estoqueFlash?.value)} />
+                            <div className="space-y-4">
+                                <div className="kpi-grid grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                     {kpiRenderOrder.slice(0, 4).map(key => {
+                                         const kpi = displayedKPIs[key];
+                                         return kpi ? <KPIPanel key={key} title={kpi.title} value={formatNumber(kpi.value)} comparison={kpi.comparison} /> : null;
+                                     })}
+                                 </div>
+                                <div className="kpi-grid grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                                    {kpiRenderOrder.slice(4).map(key => {
+                                        const kpi = displayedKPIs[key];
+                                        return kpi ? <KPIPanel key={key} title={kpi.title} value={formatNumber(kpi.value)} comparison={kpi.comparison} /> : null;
+                                    })}
                                 </div>
-                                <div className="kpi-grid grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                                    <KPIPanel title={displayedKPIs.preparadoEnvio?.title} value={formatNumber(displayedKPIs.preparadoEnvio?.value)} />
-                                    <KPIPanel title={displayedKPIs.recusadoCliente?.title} value={formatNumber(displayedKPIs.recusadoCliente?.value)} />
-                                    <KPIPanel title={displayedKPIs.naoLocalizado?.title} value={formatNumber(displayedKPIs.naoLocalizado?.value)} />
-                                    <KPIPanel title={displayedKPIs.destruido?.title} value={formatNumber(displayedKPIs.destruido?.value)} />
-                                </div>
-                            </>
+                             </div>
                         )}
 
                         {!error && hasData && timeSeriesData.length > 0 && (
