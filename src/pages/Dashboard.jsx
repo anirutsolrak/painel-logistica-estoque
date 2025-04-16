@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react'; // Added useRef
+import React, { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { reportError } from '../utils/helpers';
 import { Chart } from 'chart.js/auto';
 import Skeleton from '@mui/material/Skeleton';
@@ -19,7 +19,25 @@ import getSupabaseClient from '../utils/supabaseClient';
 import { FilterContext } from '../contexto/FilterContext';
 
 const formatDate = (dateString) => { if (!dateString) return ''; try { const date = new Date(dateString); if (isNaN(date.getTime())) return dateString; return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch (e) { return dateString; } };
-const formatNumber = (value, decimals = 0, isCurrency = false) => { if (value === null || value === undefined) { return decimals === 0 ? 'N/D' : (isCurrency ? 'R$ --,--' : 'N/D'); } const num = Number(value); if (isNaN(num)) { return decimals === 0 ? 'Invál.' : (isCurrency ? 'R$ Invál.' : 'Invál.'); } if (isCurrency && decimals > 0) { let fV; const aN = Math.abs(num); if (aN >= 1e6) { fV = (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; } else if (aN >= 1e3) { fV = (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' K'; } else { fV = num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); } return `R$ ${fV}`; } const absNum = Math.abs(num); if (decimals === 0 && absNum >= 1e6) { return (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; } if (decimals === 0 && absNum >= 1e3) { return (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' K'; } return num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
+// Updated formatNumber to remove K/M abbreviations
+const formatNumber = (value, decimals = 0, isCurrency = false) => {
+    if (value === null || value === undefined) {
+        return decimals === 0 ? 'N/D' : (isCurrency ? 'R$ --,--' : 'N/D');
+    }
+    const num = Number(value);
+    if (isNaN(num)) {
+        return decimals === 0 ? 'Invál.' : (isCurrency ? 'R$ Invál.' : 'Invál.');
+    }
+    const options = {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    };
+    if (isCurrency) {
+        options.style = 'currency';
+        options.currency = 'BRL';
+    }
+    return num.toLocaleString('pt-BR', options);
+};
 const formatPercent = (value, decimals = 1) => { if (value === null || value === undefined || isNaN(Number(value))) return '-'; const num = Number(value); return num.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
 const calculatePercentageChange = (current, previous) => { if (previous === null || previous === undefined || previous === 0 || current === null || current === undefined) { return null; } return ((current - previous) / Math.abs(previous)) * 100; };
 const getPreviousPeriodEndDate = (startDateStr) => { try { const start = new Date(startDateStr + 'T00:00:00Z'); if (isNaN(start.getTime())) return null; const prevEndDate = new Date(start.getTime() - 24 * 60 * 60 * 1000); return prevEndDate.toISOString().split('T')[0]; } catch (e) { return null; } };
@@ -50,8 +68,8 @@ export default function Dashboard({ user }) {
     const [previousPeriodSaldo, setPreviousPeriodSaldo] = useState(null);
     const [previousStockKpiData, setPreviousStockKpiData] = useState(null);
     const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768);
-    const [isHeroChartExpanded, setIsHeroChartExpanded] = useState(false); // State for hero chart expansion
-    const heroChartScrollContainerRef = useRef(null); // Ref for hero chart scroll container
+    const [isHeroChartExpanded, setIsHeroChartExpanded] = useState(false);
+    const heroChartScrollContainerRef = useRef(null);
 
     const logisticsService = useMemo(() => LogisticsService(), []);
     const estoqueService = useMemo(() => EstoqueService(), []);
@@ -161,16 +179,15 @@ export default function Dashboard({ user }) {
     useEffect(() => { const handleResize = () => setIsMobileView(window.innerWidth < 768); window.addEventListener('resize', handleResize); handleResize(); return () => window.removeEventListener('resize', handleResize); }, []);
 
     const toggleRegionExpansion = (region) => { setExpandedRegion(prev => prev === region ? null : region); };
-    const toggleHeroChartExpansion = () => setIsHeroChartExpanded(prev => !prev); // Function to toggle hero chart
+    const toggleHeroChartExpansion = () => setIsHeroChartExpanded(prev => !prev);
     const SectionTitle = ({ icon, bgColorClass = 'bg-indigo-100', borderColorClass = 'border-indigo-200', textColorClass = 'text-indigo-900', iconColorClass = 'text-indigo-600', children, isExpanded, onToggle, collapsible = false }) => ( <div className={`flex items-center justify-between ${bgColorClass} border-b-2 ${borderColorClass} rounded-t-lg shadow-sm mb-0 p-3`}> <h3 className={`flex items-center text-base sm:text-lg font-semibold ${textColorClass}`}> {icon && <i className={`fas ${icon} mr-3 ${iconColorClass} fa-fw`}></i>} <span>{children}</span> </h3> {collapsible && ( <button onClick={onToggle} className={`text-xs font-medium px-2 py-1 rounded ${textColorClass} hover:bg-black hover:bg-opacity-10 focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-current`} aria-expanded={isExpanded} aria-label={isExpanded ? 'Ver Menos KPIs' : 'Ver Todos KPIs'} > {isExpanded ? 'Ver Menos' : 'Ver Tudo'} </button> )} </div> );
 
     const heroChartData = useMemo(() => {
         const timeSeries = logisticsTimeSeriesData || [];
         if (timeSeries.length === 0) return { labels: [], datasets: [] };
         const labels = [...new Set(timeSeries.map(d => d.metric_date))].sort();
-        // Apply slicing logic for non-expanded/mobile view
         let labelsToShow = labels;
-        if (!isMobileView && !isHeroChartExpanded && labels.length > 7) { // Example limit, adjust as needed
+        if (!isMobileView && !isHeroChartExpanded && labels.length > 7) {
             labelsToShow = labels.slice(-7);
         }
         const formattedLabelsToShow = labelsToShow.map(l => new Date(l + 'T00:00:00Z').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }));
@@ -179,7 +196,6 @@ export default function Dashboard({ user }) {
         timeSeries.forEach(d => { if (dataMap[d.metric_date]) { if (d.sub_category === 'DEVOLUÇÃO') dataMap[d.metric_date].returned = d.value; if (d.sub_category === 'GERAL') dataMap[d.metric_date].geral = d.value; } });
         labels.forEach(date => { if (dataMap[date].geral === 0) { const relevantEntries = timeSeries.filter(d => d.metric_date === date && ['Entregue', 'Em Rota', 'DEVOLUÇÃO', 'Custodia'].includes(d.sub_category)); dataMap[date].geral = relevantEntries.reduce((sum, entry) => sum + (entry.value || 0), 0); } });
 
-        // Filter data based on labelsToShow
         const returnedDataToShow = labelsToShow.map(date => dataMap[date]?.returned || 0);
         const totalGeralDataToShow = labelsToShow.map(date => dataMap[date]?.geral || 0);
 
@@ -189,7 +205,7 @@ export default function Dashboard({ user }) {
             { label: 'Total Geral', data: totalGeralDataToShow, yAxisID: 'y', type: 'line', borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.2, fill: false, pointRadius: pointRadius, pointHoverRadius: 5, },
             { label: 'Devolvidos', data: returnedDataToShow, yAxisID: 'y', type: 'line', borderColor: '#ef4444', backgroundColor: '#ef444433', tension: 0.2, fill: false, pointRadius: pointRadius, pointHoverRadius: 5 }
         ] };
-     }, [logisticsTimeSeriesData, isMobileView, isHeroChartExpanded]); // Add dependencies
+     }, [logisticsTimeSeriesData, isMobileView, isHeroChartExpanded]);
 
     const heroChartOptions = useMemo(() => ({
         responsive: true,
@@ -198,8 +214,8 @@ export default function Dashboard({ user }) {
         scales: {
             x: {
                 ticks: {
-                    autoSkip: !isHeroChartExpanded, // Adjust based on expansion
-                    maxRotation: (isMobileView || isHeroChartExpanded) ? 60 : 0, // Adjust based on expansion/mobile
+                    autoSkip: !isHeroChartExpanded,
+                    maxRotation: (isMobileView || isHeroChartExpanded) ? 60 : 0,
                     font: { size: 10 },
                     padding: 5
                 }
@@ -236,7 +252,7 @@ export default function Dashboard({ user }) {
                 }
             }
         }
-    }), [formatNumber, isMobileView, isHeroChartExpanded]); // Add dependencies
+    }), [formatNumber, isMobileView, isHeroChartExpanded]);
 
     const heroChartMinWidth = isHeroChartExpanded ? `${Math.max(600, (heroChartData?.labels?.length || 0) * (isMobileView ? 35 : 50))}px` : '100%';
 
@@ -301,7 +317,7 @@ export default function Dashboard({ user }) {
                 <PeriodFilter />
 
                 <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 flex flex-col">
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center mb-3">
                          <h3 className="text-base font-semibold text-gray-700">Total Geral vs. Devolvidos ({isSingleDayView ? 'Dia' : 'Período'})</h3>
                          {logisticsTimeSeriesData.length > 0 && !isLoading && (
                              <button onClick={toggleHeroChartExpansion} className="btn btn-secondary btn-xs py-1 px-2">
@@ -314,7 +330,7 @@ export default function Dashboard({ user }) {
                             {(!isHeroChartExpanded && isMobileView) ? (
                                 <p className="text-center text-gray-500 py-10 italic flex-grow flex items-center justify-center">Gráfico disponível em tela maior ou expandido.</p>
                             ) : (
-                                <div className="flex-grow relative h-[25rem]">
+                                <div className="flex-grow relative h-[288px]">
                                     <div ref={heroChartScrollContainerRef} className={`absolute inset-0 ${isHeroChartExpanded ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
                                         <div style={{ minWidth: heroChartMinWidth, height: '100%' }} className="relative">
                                             <ChartComponent type="line" data={heroChartData} options={heroChartOptions} />
@@ -377,30 +393,6 @@ export default function Dashboard({ user }) {
                          )}
                      </div>
 
-                     <div>
-                         <SectionTitle icon="fa-recycle" bgColorClass='bg-purple-50' borderColorClass='border-purple-200' textColorClass='text-purple-900' iconColorClass='text-purple-600' isExpanded={isCycleExpanded} onToggle={() => setIsCycleExpanded(prev => !prev)} collapsible={true}>
-                             Ciclo do Cartão (Estoque Local)
-                         </SectionTitle>
-                         {isLoading ? (renderKPISkeletons(isCycleExpanded ? 5 : 1)) : (
-                             <>
-                                 {!stockError && !currentStockKpis && <div className="p-4 text-center text-gray-500 italic">Nenhum dado de ciclo para o período.</div>}
-                                 {stockError && <div className="p-4 text-center text-red-600">Falha ao carregar dados de ciclo.</div>}
-                                 {currentStockKpis && (
-                                     <div className="kpi-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-4">
-                                         <KPIPanel icon="fa-sync-alt text-blue-500" title="Reenvios (Saídas)" value={formatNumber(currentStockKpis.saidasTotal)} />
-                                         {isCycleExpanded && (
-                                            <>
-                                                <KPIPanel icon="fa-ban text-orange-500" title="Recusado Cliente" value={formatNumber(currentStockKpis.recusadoCliente)} />
-                                                <KPIPanel icon="fa-trash-alt text-red-500" title="Destruído" value={formatNumber(currentStockKpis.destruido)} />
-                                                <KPIPanel icon="fa-map-marker-slash text-yellow-700" title="Não Localizado" value={formatNumber(currentStockKpis.naoLocalizado)} />
-                                                <KPIPanel icon="fa-box text-indigo-500" title="Preparado p/ Envio" value={formatNumber(currentStockKpis.preparadoEnvio)} />
-                                            </>
-                                         )}
-                                     </div>
-                                 )}
-                             </>
-                         )}
-                     </div>
                 </div>
 
                 <div className="bg-white rounded-lg shadow-md border border-gray-200 pt-0">

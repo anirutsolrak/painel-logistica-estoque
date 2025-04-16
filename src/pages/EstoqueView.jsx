@@ -18,7 +18,31 @@ import { FilterContext } from '../contexto/FilterContext';
 
 const formatDate = (dateString) => { if (!dateString) return ''; try { const date = new Date(dateString); if (isNaN(date.getTime())) return dateString; return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch (e) { return dateString; } };
 const formatDateTime = (timestamp) => { if (!timestamp) return 'N/A'; try { const date = new Date(timestamp); return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return 'Data inválida'; } };
-const formatNumber = (value, decimals = 0, isCurrency = false) => { if (value === null || value === undefined) { return decimals === 0 ? 'N/D' : (isCurrency ? 'R$ --,--' : 'N/D'); } const num = Number(value); if (isNaN(num)) { return decimals === 0 ? 'Invál.' : (isCurrency ? 'R$ Invál.' : 'Invál.'); } if (isCurrency && decimals > 0) { let fV; const aN = Math.abs(num); if (aN >= 1e6) { fV = (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; } else if (aN >= 1e3) { fV = (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' K'; } else { fV = num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); } return `R$ ${fV}`; } const absNum = Math.abs(num); if (decimals === 0 && absNum >= 1e6) { return (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; } if (decimals === 0 && absNum >= 1e3) { return (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' K'; } return num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
+// Updated formatNumber to remove K/M abbreviations
+const formatNumber = (value, decimals = 0, isCurrency = false) => {
+    if (value === null || value === undefined) {
+        return decimals === 0 ? 'N/D' : (isCurrency ? 'R$ --,--' : 'N/D');
+    }
+    const num = Number(value);
+    if (isNaN(num)) {
+        return decimals === 0 ? 'Invál.' : (isCurrency ? 'R$ Invál.' : 'Invál.');
+    }
+    const options = {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    };
+    if (isCurrency) {
+        // Specific currency formatting (e.g., abbreviate large values)
+        let fV;
+        const aN = Math.abs(num);
+        if (aN >= 1e6) { fV = (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; }
+        else if (aN >= 1e3) { fV = (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' K'; }
+        else { fV = num.toLocaleString('pt-BR', options); }
+        return `R$ ${fV}`;
+    }
+    // Default number formatting (no abbreviation)
+    return num.toLocaleString('pt-BR', options);
+};
 const formatPercent = (value, decimals = 1) => { if (value === null || value === undefined || isNaN(Number(value))) return '-'; const num = Number(value); return num.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
 const calculatePercentageChange = (current, previous) => { if (previous === null || previous === undefined || previous === 0 || current === null || current === undefined) { return null; } return ((current - previous) / Math.abs(previous)) * 100; };
 const getPreviousPeriodEndDate = (startDateStr) => { try { const start = new Date(startDateStr + 'T00:00:00Z'); if (isNaN(start.getTime())) return null; const prevEndDate = new Date(start.getTime() - 24 * 60 * 60 * 1000); return prevEndDate.toISOString().split('T')[0]; } catch (e) { return null; } };

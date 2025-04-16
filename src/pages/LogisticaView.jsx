@@ -16,7 +16,25 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { FilterContext } from '../contexto/FilterContext';
 
 const formatDate = (dateString) => { if (!dateString) return ''; try { const date = new Date(dateString); if (isNaN(date.getTime())) return dateString; return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch (e) { return dateString; } };
-const formatNumber = (value, decimals = 0) => { if (value === null || value === undefined) { return decimals === 0 ? 'N/D' : 'R$ --,--'; } const num = Number(value); if (isNaN(num)) { return decimals === 0 ? 'Invál.' : 'R$ Invál.'; } if (decimals > 0) { let fV; const aN = Math.abs(num); if (aN >= 1e6) { fV = (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; } else if (aN >= 1e3) { fV = (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' K'; } else { fV = num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); } return `R$ ${fV}`; } const absCount = Math.abs(num); if (absCount >= 1e6) { return (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; } if (absCount >= 1e3) { return (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' K'; } return num.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); };
+// Updated formatNumber to remove K/M abbreviations
+const formatNumber = (value, decimals = 0, isCurrency = false) => {
+    if (value === null || value === undefined) {
+        return decimals === 0 ? 'N/D' : (isCurrency ? 'R$ --,--' : 'N/D');
+    }
+    const num = Number(value);
+    if (isNaN(num)) {
+        return decimals === 0 ? 'Invál.' : (isCurrency ? 'R$ Invál.' : 'Invál.');
+    }
+    const options = {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    };
+    if (isCurrency) {
+        options.style = 'currency';
+        options.currency = 'BRL';
+    }
+    return num.toLocaleString('pt-BR', options);
+};
 const formatPercent = (value, decimals = 1) => { if (value === null || value === undefined || isNaN(Number(value))) return '-'; const num = Number(value); return num.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
 const calculatePercentageChange = (current, previous) => { if (previous === null || previous === undefined || previous === 0 || current === null || current === undefined) { return null; } return ((current - previous) / Math.abs(previous)) * 100; };
 const getPreviousPeriod = (startDateStr, endDateStr) => { try { const start = new Date(startDateStr + 'T00:00:00Z'); const end = new Date(endDateStr + 'T00:00:00Z'); if (isNaN(start.getTime()) || isNaN(end.getTime())) { return { previousStartDate: null, previousEndDate: null }; } const diff = end.getTime() - start.getTime(); if (diff < 0) return { previousStartDate: null, previousEndDate: null }; const prevEndDate = new Date(start.getTime() - 24 * 60 * 60 * 1000); const prevStartDate = new Date(prevEndDate.getTime() - diff); return { previousStartDate: prevStartDate.toISOString().split('T')[0], previousEndDate: prevEndDate.toISOString().split('T')[0] }; } catch (e) { return { previousStartDate: null, previousEndDate: null }; } };
@@ -31,7 +49,7 @@ const renderSimpleComparison = (currentValue, previousValue) => {
     return <span className={`text-xs ${textClass} inline-flex items-center gap-1 whitespace-nowrap`}><i className={iconClass}></i><span>{changeText}</span><span className="text-gray-400">(vs ant.)</span></span>;
 };
 
-const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes cache expiry
+const CACHE_EXPIRY_MS = 5 * 60 * 1000;
 
 export default function LogisticaView({ onNavigate, user }) {
     const reportError = (error, context = 'LogisticaView') => console.error(`[${context}] Error:`, error?.message || error);
@@ -84,7 +102,6 @@ export default function LogisticaView({ onNavigate, user }) {
         if (!logisticsService) { setIsLoading(false); setDataError("Erro interno ou datas inválidas."); return; }
         setIsLoading(true);
         setDataError(null);
-        // Clear previous data while loading new data
         setDailyKpiData(null); setConsolidatedKpiData(null); setReasonDailyTotals([]); setTimeSeriesData([]); setDailyRegionalStateTotals({});
         const { previousStartDate, previousEndDate } = getPreviousPeriod(startDate, endDate);
         try {
@@ -128,20 +145,18 @@ export default function LogisticaView({ onNavigate, user }) {
              fetchedData.reasonDailyTotals = reasonsResult.status === 'fulfilled' ? reasonsResult.value.data || [] : [];
              fetchedData.timeSeriesData = timeSeriesResult.status === 'fulfilled' ? timeSeriesResult.value.data || [] : [];
 
-             // Set state with fetched data
              setDailyKpiData(fetchedData.dailyKpiData);
              setConsolidatedKpiData(fetchedData.consolidatedKpiData);
              setReasonDailyTotals(fetchedData.reasonDailyTotals);
              setTimeSeriesData(fetchedData.timeSeriesData);
              setDailyRegionalStateTotals(fetchedData.dailyRegionalStateTotals);
 
-             // Update cache
              updateCache('logistica', periodKey, fetchedData);
 
 
         } catch (err) { reportError(err, 'fetchAllLogisticData'); setDataError(`Falha ao carregar dados: ${err.message}`); setDailyKpiData(null); setConsolidatedKpiData(null); setReasonDailyTotals([]); setTimeSeriesData([]); setDailyRegionalStateTotals({}); }
         finally { setIsLoading(false); console.log(`[LogisticaView fetchAll] Busca finalizada.`); }
-    }, [logisticsService, cachedData, updateCache]); // Add cache dependencies
+    }, [logisticsService, cachedData, updateCache]);
 
     useEffect(() => { console.log("[LogisticaView useEffect Update]", period); fetchAllLogisticData(period.startDate, period.endDate).catch(err => reportError(err, "useEffectUpdate[fetchAllLogisticData]")); }, [period.startDate, period.endDate, fetchAllLogisticData]);
     useEffect(() => { const handleResize = () => setIsMobileView(window.innerWidth < 768); window.addEventListener('resize', handleResize); handleResize(); return () => window.removeEventListener('resize', handleResize); }, []);
@@ -235,7 +250,7 @@ export default function LogisticaView({ onNavigate, user }) {
     return (
         <div className="min-h-screen relative">
              {isLoading && (
-                 <div className="absolute inset-0 bg-white bg-opacity-75 flex items-top justify-center z-40 rounded-lg">
+                 <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-40 rounded-lg">
                     <div className="text-center">
                         <LoadingSpinner message="Conteúdo sendo carregado, por favor aguarde..." />
                     </div>
