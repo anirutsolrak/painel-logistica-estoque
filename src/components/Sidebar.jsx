@@ -67,14 +67,14 @@ export default function Sidebar({ active, setActive, currentView, setCurrentView
                             label="Dashboard"
                             onClick={closeSidebar}
                         />
-                         <NavLink
+                    {/*      <NavLink
                             currentView={currentView}
                             viewName="logistica" // Aponta para a nova view 'logistica'
                             setView={setCurrentView}
                             icon="fas fa-truck" // Ícone Logística
                             label="Logística" // Nome atualizado
                             onClick={closeSidebar}
-                        />
+                        /> */}
                         <NavLink // Novo link para Estoque
                             currentView={currentView}
                             viewName="estoque" // Nome da nova view
