@@ -1,14 +1,11 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
-// Removido import de reportError se não existir em helpers
-// import { reportError } from '../utils/helpers';
-import { insertLocalStockEntries, upsertUfAverageCosts } from '../utils/supabaseClient'; // Ajuste o caminho se necessário
+// Usar a função renomeada/alterada
+import { upsertLocalStockEntries, upsertUfAverageCosts } from '../utils/supabaseClient';
 
-// Cabeçalhos esperados (MAIÚSCULAS E SEM ACENTOS PARA COMPARAÇÃO)
 const expectedSheet1HeadersNormalized = ["CONTRATO", "UF", "DATA", "STATUS CAPITAL", "REENVIO"];
 const expectedSheet2HeadersNormalized = ["UF", "MEDIA DE VALORES"];
 
-// Função para normalizar cabeçalhos (remover acentos, espaços extras, maiúsculas)
 const normalizeHeader = (header) => {
     if (typeof header !== 'string') return '';
     return header.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
@@ -30,9 +27,7 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
 
     const parseCurrency = (value) => {
         if (value === null || value === undefined) return null;
-        // Se já for número, retorna
         if (typeof value === 'number' && !isNaN(value)) return value;
-        // Se for string, tenta limpar
         if (typeof value === 'string') {
             try {
                 const cleanedValue = value.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
@@ -43,17 +38,14 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
                 return null;
             }
         }
-        // Se for outro tipo, loga e retorna null
         console.warn(`[parseCurrency] Tipo inesperado recebido: ${typeof value}, valor: ${value}`);
         return null;
     };
 
     const parseDate = (value) => {
         if (value === null || value === undefined) return null;
-        // Se já for data JS válida
         if (value instanceof Date && !isNaN(value.getTime())) {
             try {
-                // Formata consistentemente para YYYY-MM-DD (UTC para evitar timezone shift)
                 const year = value.getUTCFullYear();
                 const month = (value.getUTCMonth() + 1).toString().padStart(2, '0');
                 const day = value.getUTCDate().toString().padStart(2, '0');
@@ -63,12 +55,9 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
                  return null;
             }
         }
-        // Se for número (serial Excel)
         if (typeof value === 'number') {
             try {
-                // XLSX.SSF.parse_date_code pode ser impreciso ou lançar erros
-                // Usar date:'iso' no read pode ser melhor, mas tentamos manualmente
-                const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // Base do Excel
+                const excelEpoch = new Date(Date.UTC(1899, 11, 30));
                 const jsMillis = excelEpoch.getTime() + value * 24 * 60 * 60 * 1000;
                 const jsDate = new Date(jsMillis);
                 if (!isNaN(jsDate.getTime())) {
@@ -81,13 +70,10 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
                 console.warn(`[parseDate] Não foi possível converter número serial Excel ${value}`, e);
             }
         }
-        // Se for string, tenta parsear
         if (typeof value === 'string') {
-            // Primeiro, tenta formato YYYY-MM-DD diretamente
             if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
                 return value;
             }
-            // Tenta parse genérico, mas cuidado com formatos ambíguos (DD/MM vs MM/DD)
             const date = new Date(value + 'T00:00:00Z');
             if (!isNaN(date.getTime())) {
                  const year = date.getUTCFullYear();
@@ -108,7 +94,6 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
                 try {
                     const arrayBuffer = event.target.result;
                     console.log("[Process Excel] Lendo workbook...");
-                    // Tentar com cellDates: true primeiro
                     const workbook = XLSX.read(arrayBuffer, { type: 'buffer', cellDates: true });
                     console.log("[Process Excel] Workbook lido. Abas:", workbook.SheetNames);
 
@@ -116,26 +101,21 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
                         throw new Error("Arquivo precisa conter pelo menos 2 abas (Estoque e Custos).");
                     }
 
-                    // --- Processa Aba 1 (Estoque) ---
                     const sheet1Name = workbook.SheetNames[0];
                     const sheet1 = workbook.Sheets[sheet1Name];
                     console.log(`[Process Excel] Processando Aba 1: "${sheet1Name}"`);
-                    // Usar sheet_to_json com header: 1 para validação
-                    const rawData1 = XLSX.utils.sheet_to_json(sheet1, { header: 1, defval: null, blankrows: false }); // blankrows: false para pular linhas vazias
+                    const rawData1 = XLSX.utils.sheet_to_json(sheet1, { header: 1, defval: null, blankrows: false });
                     console.log(`[Process Excel] Aba 1 - Primeiras 5 linhas brutas:`, rawData1.slice(0, 5));
 
                     if (!rawData1 || rawData1.length < 2) throw new Error(`Aba "${sheet1Name}" vazia ou só com cabeçalho.`);
 
-                    // Normaliza os cabeçalhos lidos do arquivo
                     const fileHeaders1 = rawData1[0].map(normalizeHeader);
                     console.log("[Process Excel] Aba 1 - Cabeçalhos Normalizados:", fileHeaders1);
 
-                    // Validação normalizada
                     const missingHeaders1 = expectedSheet1HeadersNormalized.filter(eh => !fileHeaders1.includes(eh));
                     if (missingHeaders1.length > 0) {
                         throw new Error(`Cabeçalhos ausentes na Aba 1: ${missingHeaders1.join(', ')}. Esperados: ${expectedSheet1HeadersNormalized.join(', ')}`);
                     }
-                    // Mapeia cabeçalho normalizado para seu índice no arquivo
                     const headerIndexMap1 = expectedSheet1HeadersNormalized.reduce((acc, header) => {
                         acc[header] = fileHeaders1.indexOf(header);
                         return acc;
@@ -146,27 +126,27 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
                     const stockEntries = [];
                     for (let i = 1; i < rawData1.length; i++) {
                         const row = rawData1[i];
-                        // Pula linhas que não têm o número esperado de colunas (pode indicar linhas vazias no final)
                         if (row.length < expectedSheet1HeadersNormalized.length) continue;
 
                         const entryDate = parseDate(row[headerIndexMap1["DATA"]]);
                         const resendCount = parseInt(row[headerIndexMap1["REENVIO"]], 10);
                         const ufValue = row[headerIndexMap1["UF"]];
+                        const contractValue = row[headerIndexMap1["CONTRATO"]]; // Get contract value
 
-                        // Log detalhado da primeira linha processada
                         if (i === 1) {
                             console.log(`[Process Excel] Aba 1 - Linha ${i+1} RAW:`, row);
-                            console.log(`[Process Excel] Aba 1 - Linha ${i+1} Parsed: Date=${entryDate}, Resend=${resendCount}, UF=${ufValue}`);
+                            console.log(`[Process Excel] Aba 1 - Linha ${i+1} Parsed: Date=${entryDate}, Resend=${resendCount}, UF=${ufValue}, Contract=${contractValue}`);
                         }
 
-                        if (!ufValue || !entryDate) {
-                             console.warn(`[Process Excel] Aba 1 Linha ${i + 1} ignorada: UF ou Data inválida.`);
+                        // Check if essential fields for upsert are present
+                        if (!contractValue || !entryDate) {
+                             console.warn(`[Process Excel] Aba 1 Linha ${i + 1} ignorada: Contrato ou Data inválida/ausente (essencial para upsert).`);
                              continue;
                          }
 
                         stockEntries.push({
-                            contract: row[headerIndexMap1["CONTRATO"]] ? String(row[headerIndexMap1["CONTRATO"]]) : null,
-                            uf: String(ufValue).toUpperCase().trim().substring(0, 2), // Garante 2 chars
+                            contract: String(contractValue), // Ensure it's a string
+                            uf: ufValue ? String(ufValue).toUpperCase().trim().substring(0, 2) : 'ND', // Handle potential null UF
                             entry_date: entryDate,
                             status_capital: row[headerIndexMap1["STATUS CAPITAL"]] ? String(row[headerIndexMap1["STATUS CAPITAL"]]) : null,
                             partner: getPartnerFromStatus(row[headerIndexMap1["STATUS CAPITAL"]]),
@@ -174,7 +154,6 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
                         });
                     }
 
-                    // --- Processa Aba 2 (Custos) ---
                     const sheet2Name = workbook.SheetNames[1];
                     const sheet2 = workbook.Sheets[sheet2Name];
                     console.log(`[Process Excel] Processando Aba 2: "${sheet2Name}"`);
@@ -205,7 +184,6 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
                         const rawCost = row[headerIndexMap2["MEDIA DE VALORES"]];
                         const averageCost = parseCurrency(rawCost);
 
-                         // Log detalhado da primeira linha processada
                          if (i === 1) {
                             console.log(`[Process Excel] Aba 2 - Linha ${i+1} RAW:`, row);
                             console.log(`[Process Excel] Aba 2 - Linha ${i+1} Parsed: UF=${uf}, RawCost=${rawCost}, ParsedCost=${averageCost}`);
@@ -255,11 +233,11 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
         try {
             const { stockEntries, ufCosts } = await processExcelFile(file);
 
-            // *** Log antes de enviar ***
             console.log(`[File Upload] Enviando ${stockEntries.length} entradas de estoque e ${ufCosts.length} custos UF para Supabase...`);
 
             const results = await Promise.allSettled([
-                insertLocalStockEntries(stockEntries),
+                // Chamar a função renomeada/alterada
+                upsertLocalStockEntries(stockEntries),
                 upsertUfAverageCosts(ufCosts)
             ]);
 
@@ -269,18 +247,24 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
             let successSummary = {};
 
             if (stockResult.status === 'rejected') {
-                console.error("[File Upload] Falha ao inserir estoque:", stockResult.reason);
+                console.error("[File Upload] Falha ao upsert estoque:", stockResult.reason);
                 errors.push(`Erro Estoque: ${stockResult.reason?.message || 'Desconhecido'}`);
+            } else if (stockResult.value?.error) { // Check for error within resolved promise
+                 console.error("[File Upload] Erro retornado do upsert estoque:", stockResult.value.error);
+                 errors.push(`Erro Estoque: ${stockResult.value.error.message || 'Desconhecido'}`);
             } else {
-                 successSummary.processedStockEntries = stockResult.value?.data?.length ?? 0; // Quantos foram inseridos
-                 console.log("[File Upload] Resultado inserção estoque:", stockResult.value);
+                 successSummary.processedStockEntries = stockResult.value?.data?.length ?? 0;
+                 console.log("[File Upload] Resultado upsert estoque:", stockResult.value);
              }
 
             if (costResult.status === 'rejected') {
                 console.error("[File Upload] Falha ao upsert custos:", costResult.reason);
                  errors.push(`Erro Custos: ${costResult.reason?.message || 'Desconhecido'}`);
+            } else if (costResult.value?.error){ // Check for error within resolved promise
+                 console.error("[File Upload] Erro retornado do upsert custos:", costResult.value.error);
+                 errors.push(`Erro Custos: ${costResult.value.error.message || 'Desconhecido'}`);
             } else {
-                 successSummary.processedUfCosts = costResult.value?.data?.length ?? 0; // Quantos foram upserted
+                 successSummary.processedUfCosts = costResult.value?.data?.length ?? 0;
                  console.log("[File Upload] Resultado upsert custos:", costResult.value);
              }
 
@@ -290,7 +274,7 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
 
             console.log("[File Upload] Processamento concluído com sucesso!", successSummary);
             if (onFileUpload) {
-                 onFileUpload(successSummary); // Passa resumo real
+                 onFileUpload(successSummary);
              }
 
         } catch (uploadError) {
@@ -307,7 +291,7 @@ export default function FileUploaderEstoque({ onFileUpload, user, onClose }) {
         }
     };
 
-    const triggerFileInput = () => { /* ... (sem alterações) ... */ setError(null); if (fileInputRef.current) { fileInputRef.current.click(); } };
+    const triggerFileInput = () => { setError(null); if (fileInputRef.current) { fileInputRef.current.click(); } };
 
     return (
         <div data-name="file-upload-container" className="file-upload-container">

@@ -51,14 +51,37 @@ function setupAuthListener() {
 
 setupAuthListener();
 
-export async function insertLocalStockEntries(entries) {
-    if (!entries || entries.length === 0) { console.warn("[Supabase Insert Stock] No entries provided."); return { data: [], error: null }; }
-    const supabase = getSupabaseClient(); if (!supabase) throw new Error("Supabase client not initialized for stock insert.");
-    try { const { data: { user } } = await supabase.auth.getUser(); if (!user) { console.error("[Supabase Insert Stock] User not authenticated."); return { data: null, error: new Error("User not authenticated") }; } } catch (authError) { console.error("[Supabase Insert Stock] Error checking auth user:", authError); return { data: null, error: authError }; }
-    console.log(`[Supabase Insert Stock] Attempting insert ${entries.length} entries.`);
-    try { const { data, error } = await supabase.from('local_stock_entries').insert(entries).select(); if (error) { console.error('[Supabase Insert Stock] Error:', error); throw error; } console.log(`[Supabase Insert Stock] ${data ? data.length : 0} inserted.`); return { data, error: null }; }
-    catch (error) { console.error("[Supabase Insert Stock] Catch error:", error); return { data: null, error }; }
+// Adicionado 'export' aqui
+export async function upsertLocalStockEntries(entries) {
+    if (!entries || entries.length === 0) { console.warn("[Supabase Upsert Stock] No entries provided."); return { data: [], error: null }; }
+    const supabase = getSupabaseClient(); if (!supabase) throw new Error("Supabase client not initialized for stock upsert.");
+
+    try { const { data: { user } } = await supabase.auth.getUser(); if (!user) { console.error("[Supabase Upsert Stock] User not authenticated."); return { data: null, error: new Error("User not authenticated") }; } } catch (authError) { console.error("[Supabase Upsert Stock] Error checking auth user:", authError); return { data: null, error: authError }; }
+
+    console.log(`[Supabase Upsert Stock] Attempting upsert ${entries.length} entries.`);
+    try {
+        const { data, error } = await supabase
+            .from('local_stock_entries')
+            .upsert(entries, { onConflict: 'contract, entry_date' })
+            .select();
+
+        if (error) {
+            console.error('[Supabase Upsert Stock] Error:', error);
+            if (error.message.includes('there is no unique constraint matching the given columns')) {
+                 console.error("[Supabase Upsert Stock] ERRO FATAL: A constraint UNIQUE para 'onConflict' não foi encontrada na tabela 'local_stock_entries'. Verifique as colunas especificadas ('contract, entry_date') e a definição da constraint no banco de dados.");
+                 throw new Error("Erro de configuração do banco: Constraint UNIQUE ausente para upsert.");
+            }
+            throw error;
+        }
+        console.log(`[Supabase Upsert Stock] ${data ? data.length : 0} upserted.`);
+        return { data, error: null };
+    }
+    catch (error) {
+        console.error("[Supabase Upsert Stock] Catch error:", error);
+        return { data: null, error };
+    }
 }
+
 
 export async function upsertUfAverageCosts(costs) {
     if (!costs || costs.length === 0) { console.warn("[Supabase Upsert Costs] No costs provided."); return { data: [], error: null }; }
@@ -73,7 +96,7 @@ export async function insertLogisticsDailyMetrics(metrics) {
     if (!metrics || metrics.length === 0) { console.warn("[Supabase Insert Daily State Logistics] No metrics."); return { data: [], error: null }; }
     const supabase = getSupabaseClient(); if (!supabase) throw new Error("Supabase client not initialized.");
     try { const { data: { user } } = await supabase.auth.getUser(); if (!user) { console.error("[Supabase Insert Daily State Logistics] User not auth."); return { data: null, error: new Error("User not authenticated") }; } } catch (authError) { console.error("[Supabase Insert Daily State Logistics] Auth check error:", authError); return { data: null, error: authError }; }
-    console.log(`[Supabase Insert Daily State Logistics] Attempting upsert ${metrics.length} metrics into 'logistics_report_daily_state'. First:`, JSON.stringify(metrics[0])); // Alterado nome da tabela
+    console.log(`[Supabase Insert Daily State Logistics] Attempting upsert ${metrics.length} metrics into 'logistics_report_daily_state'. First:`, JSON.stringify(metrics[0]));
     try { const { data, error } = await supabase.from('logistics_report_daily_state').upsert(metrics, { onConflict: 'metric_date, state, metric_key' }).select(); if (error) { console.error('[Supabase Insert Daily State Logistics] Error:', error); throw error; } console.log(`[Supabase Insert Daily State Logistics] ${data ? data.length : 0} upserted.`); return { data, error: null }; }
     catch (error) { console.error("[Supabase Insert Daily State Logistics] Catch error:", error); return { data: null, error }; }
 }
