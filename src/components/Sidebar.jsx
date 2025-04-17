@@ -59,7 +59,7 @@ export default function Sidebar({ active, setActive, currentView, setCurrentView
                 </div>
                 <nav data-name="sidebar-nav">
                     <ul className="space-y-2">
-                        <NavLink
+                 {/*       <NavLink
                             currentView={currentView}
                             viewName="dashboard"
                             setView={setCurrentView}
@@ -67,7 +67,7 @@ export default function Sidebar({ active, setActive, currentView, setCurrentView
                             label="Dashboard"
                             onClick={closeSidebar}
                         />
-                    {/*      <NavLink
+                          <NavLink
                             currentView={currentView}
                             viewName="logistica" // Aponta para a nova view 'logistica'
                             setView={setCurrentView}

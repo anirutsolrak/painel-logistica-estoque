@@ -65,8 +65,8 @@ export default function App() {
     }, []);
 
 
-    const getInitialView = () => { const hash = window.location.hash.replace('#/', ''); return ['logistica', 'dashboard', 'estoque'].includes(hash) ? hash : 'dashboard'; };
-    const [currentView, setCurrentView] = useState(() => user ? getInitialView() : 'dashboard');
+    const getInitialView = () => { const hash = window.location.hash.replace('#/', ''); return ['logistica', 'dashboard', 'estoque'].includes(hash) ? hash : 'estoque'; };
+    const [currentView, setCurrentView] = useState(() => user ? getInitialView() : 'estoque');
     const [sidebarActive, setSidebarActive] = useState(false);
 
     useEffect(() => {
